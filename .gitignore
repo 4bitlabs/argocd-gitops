@@ -1,0 +1,11 @@
+# Arquivos locais
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Arquivos temporários
+*.tmp
+*.bak
+*~
+

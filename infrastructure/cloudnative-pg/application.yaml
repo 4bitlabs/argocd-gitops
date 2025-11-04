@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cloudnative-pg-operator
+  namespace: argocd
+  finalizers:
+    - argocd.argoproj.io/resources-finalizer
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  
+  source:
+    repoURL: https://cloudnative-pg.github.io/charts
+    targetRevision: 0.21.1
+    chart: cloudnative-pg
+    helm:
+      values: |
+        # Instalação do operador CloudNativePG via Helm
+        # Este operador será usado para gerenciar clusters PostgreSQL no Kubernetes
+        # O operador será instalado no namespace cnpg-system
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cnpg-system
+  
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
