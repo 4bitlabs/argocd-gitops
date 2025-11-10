@@ -26,10 +26,14 @@ spec:
   
   syncPolicy:
     automated:
+      # Remove recursos que existem no cluster mas não estão mais no Git (limpeza automática)
       prune: true
+      # Reverte automaticamente mudanças manuais feitas no cluster, mantendo-o alinhado com o Git
       selfHeal: true
+      # Impede sincronização quando não há recursos para aplicar (evita aplicações vazias)
       allowEmpty: false
     syncOptions:
+      # Cria o namespace de destino automaticamente se ele não existir
       - CreateNamespace=true
       - PrunePropagationPolicy=foreground
       - PruneLast=true
