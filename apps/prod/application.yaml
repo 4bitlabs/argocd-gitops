@@ -7,8 +7,6 @@ metadata:
     - argocd.argoproj.io/resources-finalizer
   annotations:
     argocd.argoproj.io/sync-wave: "1"
-    # Intervalo de verificação do repositório: verifica mudanças no Git a cada 30 segundos
-    argocd.argoproj.io/refresh: 30s
 spec:
   project: default
   
