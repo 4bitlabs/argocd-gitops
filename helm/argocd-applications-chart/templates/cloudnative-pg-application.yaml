@@ -1,0 +1,45 @@
+{{- if .Values.cloudnativePg.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.cloudnativePg.name }}
+  namespace: {{ .Values.global.argocdNamespace }}
+  finalizers:
+    - argocd.argoproj.io/resources-finalizer
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.cloudnativePg.syncWave | quote }}
+spec:
+  project: {{ .Values.global.project }}
+  
+  source:
+    repoURL: {{ .Values.cloudnativePg.source.repoURL }}
+    targetRevision: {{ .Values.cloudnativePg.source.targetRevision }}
+    chart: {{ .Values.cloudnativePg.source.chart }}
+    helm:
+      values: |
+        # Instalação do operador CloudNativePG via Helm
+        # Este operador será usado para gerenciar clusters PostgreSQL no Kubernetes
+        # O operador será instalado no namespace cnpg-system
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.cloudnativePg.destination.namespace }}
+  
+  syncPolicy:
+    automated:
+      prune: {{ .Values.syncPolicy.automated.prune }}
+      selfHeal: {{ .Values.syncPolicy.automated.selfHeal }}
+      allowEmpty: {{ .Values.syncPolicy.automated.allowEmpty }}
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ServerSideApply=true
+    retry:
+      limit: {{ .Values.syncPolicy.retry.limit }}
+      backoff:
+        duration: {{ .Values.syncPolicy.retry.backoff.duration }}
+        factor: {{ .Values.syncPolicy.retry.backoff.factor }}
+        maxDuration: {{ .Values.syncPolicy.retry.backoff.maxDuration }}
+{{- end }}
+

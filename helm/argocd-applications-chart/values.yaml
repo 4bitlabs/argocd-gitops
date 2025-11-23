@@ -1,0 +1,106 @@
+# Valores padrão para o chart de Applications do ArgoCD
+
+# Configurações globais
+global:
+  argocdNamespace: argocd
+  project: default
+  repoURL: https://github.com/4bitlabs/saga.git
+
+# CloudNativePG Operator
+cloudnativePg:
+  enabled: true
+  name: cloudnative-pg-operator
+  syncWave: "0"
+  source:
+    repoURL: https://cloudnative-pg.github.io/charts
+    targetRevision: 0.21.1
+    chart: cloudnative-pg
+  destination:
+    namespace: cnpg-system
+
+# Argo Rollouts
+argorollouts:
+  enabled: true
+  name: argorollouts
+  syncWave: "0"
+  source:
+    repoURL: https://github.com/argoproj/argo-rollouts.git
+    targetRevision: v1.7.0
+    path: manifests/install
+  destination:
+    namespace: argo-rollouts
+
+# PostgreSQL - Desenvolvimento
+postgresDev:
+  enabled: true
+  name: saga-postgres-dev
+  syncWave: "0"
+  source:
+    targetRevision: develop
+    path: helm/postgres-chart
+    releaseName: saga-postgres-dev
+    valueFiles:
+      - values-dev.yaml
+  destination:
+    namespace: saga-dev
+
+# PostgreSQL - Produção
+postgresProd:
+  enabled: true
+  name: saga-postgres-prod
+  syncWave: "0"
+  source:
+    targetRevision: main
+    path: helm/postgres-chart
+    releaseName: saga-postgres-prod
+    valueFiles:
+      - values-prod.yaml
+  destination:
+    namespace: saga-prod
+
+# Aplicação SAGA - Desenvolvimento
+sagaDev:
+  enabled: true
+  name: saga-dev
+  syncWave: "1"
+  source:
+    targetRevision: develop
+    path: helm/saga-chart
+    releaseName: saga-dev
+    valueFiles:
+      - values-dev.yaml
+  destination:
+    namespace: saga-dev
+
+# Aplicação SAGA - Produção
+sagaProd:
+  enabled: true
+  name: saga-prod
+  syncWave: "1"
+  source:
+    targetRevision: main
+    path: helm/saga-chart
+    releaseName: saga-prod
+    valueFiles:
+      - values-prod.yaml
+  destination:
+    namespace: saga-prod
+
+# Configurações de sincronização padrão
+syncPolicy:
+  automated:
+    prune: true
+    selfHeal: true
+    allowEmpty: false
+  syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+    - ServerSideApply=true
+  retry:
+    limit: 5
+    backoff:
+      duration: 5s
+      factor: 2
+      maxDuration: 3m
+

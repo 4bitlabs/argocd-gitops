@@ -1,0 +1,49 @@
+{{- if .Values.sagaProd.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.sagaProd.name }}
+  namespace: {{ .Values.global.argocdNamespace }}
+  finalizers:
+    - argocd.argoproj.io/resources-finalizer
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.sagaProd.syncWave | quote }}
+spec:
+  project: {{ .Values.global.project }}
+  
+  source:
+    repoURL: {{ .Values.global.repoURL }}
+    targetRevision: {{ .Values.sagaProd.source.targetRevision }}
+    path: {{ .Values.sagaProd.source.path }}
+    helm:
+      releaseName: {{ .Values.sagaProd.source.releaseName }}
+      valueFiles:
+        {{- range .Values.sagaProd.source.valueFiles }}
+        - {{ . }}
+        {{- end }}
+      values: |
+        # Valores específicos do ambiente de produção
+        # Podem ser sobrescritos aqui se necessário
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.sagaProd.destination.namespace }}
+  
+  syncPolicy:
+    automated:
+      prune: {{ .Values.syncPolicy.automated.prune }}
+      selfHeal: {{ .Values.syncPolicy.automated.selfHeal }}
+      allowEmpty: {{ .Values.syncPolicy.automated.allowEmpty }}
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - Replace=true
+    retry:
+      limit: {{ .Values.syncPolicy.retry.limit }}
+      backoff:
+        duration: {{ .Values.syncPolicy.retry.backoff.duration }}
+        factor: {{ .Values.syncPolicy.retry.backoff.factor }}
+        maxDuration: {{ .Values.syncPolicy.retry.backoff.maxDuration }}
+{{- end }}
+

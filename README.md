@@ -6,30 +6,28 @@ Este repositório contém as configurações GitOps para deploy da aplicação S
 
 ```
 argocd-gitops/
-├── infrastructure/
-│   ├── cloudnative-pg/
-│   │   └── application.yaml      # Instalação do operador CloudNativePG
-│   ├── argorollouts/
-│   │   └── application.yaml      # Instalação do Argo Rollouts
-│   └── postgres/
-│       ├── dev/
-│       │   └── application.yaml  # Banco de dados de desenvolvimento
-│       └── prod/
-│           └── application.yaml  # Banco de dados de produção
-├── apps/
-│   ├── dev/
-│   │   └── application.yaml      # Aplicação de desenvolvimento
-│   └── prod/
-│       └── application.yaml      # Aplicação de produção
-├── kustomization.yaml            # Kustomize para aplicar todas as applications
+├── helm/
+│   └── argocd-applications-chart/
+│       ├── Chart.yaml            # Definição do Helm chart
+│       ├── values.yaml           # Valores padrão do chart
+│       └── templates/
+│           ├── _helpers.tpl      # Helpers do Helm
+│           ├── cloudnative-pg-application.yaml
+│           ├── argorollouts-application.yaml
+│           ├── postgres-dev-application.yaml
+│           ├── postgres-prod-application.yaml
+│           ├── saga-dev-application.yaml
+│           └── saga-prod-application.yaml
 └── README.md
 ```
+
+> **Nota**: Todas as Applications do ArgoCD são gerenciadas através do Helm chart `argocd-applications-chart`.
 
 ## Componentes
 
 ### 1. CloudNativePG Operator
 
-O operador CloudNativePG é instalado para gerenciar clusters PostgreSQL no Kubernetes. O Application está localizado em `infrastructure/cloudnative-pg/application.yaml`.
+O operador CloudNativePG é instalado para gerenciar clusters PostgreSQL no Kubernetes. O Application é gerenciado através do Helm chart em `helm/argocd-applications-chart/templates/cloudnative-pg-application.yaml`.
 
 - **Namespace**: `cnpg-system`
 - **Chart**: `cloudnative-pg` do repositório oficial
@@ -38,7 +36,7 @@ O operador CloudNativePG é instalado para gerenciar clusters PostgreSQL no Kube
 
 ### 2. Argo Rollouts
 
-O Argo Rollouts é instalado para fornecer estratégias avançadas de deployment (BlueGreen e Canary). O Application está localizado em `infrastructure/argorollouts/application.yaml`.
+O Argo Rollouts é instalado para fornecer estratégias avançadas de deployment (BlueGreen e Canary). O Application é gerenciado através do Helm chart em `helm/argocd-applications-chart/templates/argorollouts-application.yaml`.
 
 - **Namespace**: `argo-rollouts`
 - **Repositório**: `https://github.com/argoproj/argo-rollouts.git`
@@ -168,7 +166,7 @@ A aplicação principal SAGA, que consome o banco de dados PostgreSQL.
 
 #### 4.1. Aplicação de Desenvolvimento (dev)
 
-A instância de desenvolvimento da aplicação SAGA está configurada em `apps/dev/application.yaml`.
+A instância de desenvolvimento da aplicação SAGA é gerenciada através do Helm chart em `helm/argocd-applications-chart/templates/saga-dev-application.yaml`.
 
 - **Application**: `saga-dev`
 - **Namespace**: `saga-dev`
@@ -179,7 +177,7 @@ A instância de desenvolvimento da aplicação SAGA está configurada em `apps/d
 
 #### 4.2. Aplicação de Produção (prod)
 
-A instância de produção da aplicação SAGA está configurada em `apps/prod/application.yaml`.
+A instância de produção da aplicação SAGA é gerenciada através do Helm chart em `helm/argocd-applications-chart/templates/saga-prod-application.yaml`.
 
 - **Application**: `saga-prod`
 - **Namespace**: `saga-prod`
@@ -263,31 +261,14 @@ Esta ordem garante que o banco de dados esteja disponível antes da aplicação 
    argocd repo list
    ```
 
-5. **Aplicar as configurações no ArgoCD**:
-   ### você pode aplicar todas de uma vez fazendo uso do arquivo kustomization.yaml
+5. **Aplicar as configurações no ArgoCD usando Helm**:
+   
    ```bash
-   # Aplicar as aplicações de uma vez pelo kustomization.yaml
-   kubectl apply -k .
-   ```
-   ### ou, você aplicar cada aplicação uma por uma
-
-   ```bash
-   # Aplicar o operador CloudNativePG
-   kubectl apply -f infrastructure/cloudnative-pg/application.yaml
+   # Aplicar todas as Applications de uma vez usando o Helm chart
+   helm install argocd-applications ./helm/argocd-applications-chart
    
    # Aguardar o operador estar pronto (opcional, mas recomendado)
    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system --timeout=300s
-   
-   # Aplicar o Argo Rollouts
-   kubectl apply -f infrastructure/argorollouts/application.yaml
-   
-   # Aplicar os bancos de dados PostgreSQL
-   kubectl apply -f infrastructure/postgres/dev/application.yaml
-   kubectl apply -f infrastructure/postgres/prod/application.yaml
-   
-   # Aplicar as aplicações
-   kubectl apply -f apps/dev/application.yaml
-   kubectl apply -f apps/prod/application.yaml
    ```
 
 6. **Verificar o status via ArgoCD CLI**:
@@ -307,6 +288,48 @@ Esta ordem garante que o banco de dados esteja disponível antes da aplicação 
 
    Mas, como você está com o servidor aberto, você também pode acessar a UI do argocd e acompanhar tudo por lá
 
+## Gerenciamento com Helm
+
+Este projeto utiliza Helm charts para gerenciar todas as Applications do ArgoCD de forma centralizada. O chart principal está localizado em `helm/argocd-applications-chart/`.
+
+### Comandos Úteis do Helm
+
+```bash
+# Instalar todas as Applications
+helm install argocd-applications ./helm/argocd-applications-chart
+
+# Atualizar as Applications
+helm upgrade argocd-applications ./helm/argocd-applications-chart
+
+# Verificar o status da instalação
+helm status argocd-applications
+
+# Ver os valores configurados
+helm get values argocd-applications
+
+# Desinstalar todas as Applications
+helm uninstall argocd-applications
+
+# Renderizar os templates sem aplicar (dry-run)
+helm template argocd-applications ./helm/argocd-applications-chart
+```
+
+### Personalização de Valores
+
+Você pode personalizar os valores do chart criando um arquivo `values-custom.yaml` e aplicando com:
+
+```bash
+helm install argocd-applications ./helm/argocd-applications-chart -f values-custom.yaml
+```
+
+Ou sobrescrever valores específicos na linha de comando:
+
+```bash
+helm install argocd-applications ./helm/argocd-applications-chart \
+  --set cloudnativePg.source.targetRevision=0.22.0 \
+  --set sagaDev.source.targetRevision=feature-branch
+```
+
 ## Arquitetura
 
 A arquitetura do projeto segue o princípio de separação de responsabilidades:
@@ -318,6 +341,11 @@ O banco de dados PostgreSQL foi separado em um Helm chart próprio (`postgres-ch
 - Garantir maior independência e disponibilidade
 - Facilitar manutenção e atualizações do banco
 - Permitir que o banco permaneça disponível mesmo durante atualizações da aplicação
+
+As Applications do ArgoCD são gerenciadas através de um Helm chart centralizado (`argocd-applications-chart`) para:
+- Facilitar o gerenciamento de todas as Applications em um único lugar
+- Permitir versionamento e controle de mudanças
+- Simplificar o deploy e atualizações
 
 ## Referências
 

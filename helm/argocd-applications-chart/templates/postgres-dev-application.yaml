@@ -1,0 +1,46 @@
+{{- if .Values.postgresDev.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.postgresDev.name }}
+  namespace: {{ .Values.global.argocdNamespace }}
+  finalizers:
+    - argocd.argoproj.io/resources-finalizer
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.postgresDev.syncWave | quote }}
+spec:
+  project: {{ .Values.global.project }}
+  
+  source:
+    repoURL: {{ .Values.global.repoURL }}
+    targetRevision: {{ .Values.postgresDev.source.targetRevision }}
+    path: {{ .Values.postgresDev.source.path }}
+    helm:
+      releaseName: {{ .Values.postgresDev.source.releaseName }}
+      valueFiles:
+        {{- range .Values.postgresDev.source.valueFiles }}
+        - {{ . }}
+        {{- end }}
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.postgresDev.destination.namespace }}
+  
+  syncPolicy:
+    automated:
+      prune: {{ .Values.syncPolicy.automated.prune }}
+      selfHeal: {{ .Values.syncPolicy.automated.selfHeal }}
+      allowEmpty: {{ .Values.syncPolicy.automated.allowEmpty }}
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - Replace=true
+    retry:
+      limit: {{ .Values.syncPolicy.retry.limit }}
+      backoff:
+        duration: {{ .Values.syncPolicy.retry.backoff.duration }}
+        factor: {{ .Values.syncPolicy.retry.backoff.factor }}
+        maxDuration: {{ .Values.syncPolicy.retry.backoff.maxDuration }}
+{{- end }}
+

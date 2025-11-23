@@ -32,8 +32,8 @@ kubectl delete application saga-postgres-prod -n argocd
 kubectl delete application saga-dev -n argocd
 kubectl delete application saga-prod -n argocd
 
-# Ou usar kustomize
-kubectl delete -k ./argocd-gitops
+# Ou usar Helm para desinstalar todas de uma vez
+helm uninstall argocd-applications
 ```
 
 ## Passo 2: Remover Todos os Recursos Criados
@@ -73,8 +73,8 @@ argocd repo list
 argocd repo add https://cloudnative-pg.github.io/charts --type helm --name cloudnative-pg
 argocd repo add https://github.com/4bitlabs/saga.git --type git
 
-# 3. Aplicar as Applications
-kubectl apply -k ./argocd-gitops
+# 3. Aplicar as Applications usando Helm
+helm install argocd-applications ./argocd-gitops/helm/argocd-applications-chart
 
 # 4. Verificar status
 argocd app list
@@ -111,6 +111,6 @@ echo "=== Verificando limpeza ==="
 kubectl get applications -n argocd | grep -E "saga-|cloudnative" || echo "Nenhuma Application encontrada"
 kubectl get namespaces | grep -E "saga-|cnpg" || echo "Nenhum namespace encontrado"
 
-echo "=== Reset completo! Agora você pode reaplicar com: kubectl apply -k ./argocd-gitops ==="
+echo "=== Reset completo! Agora você pode reaplicar com: helm install argocd-applications ./argocd-gitops/helm/argocd-applications-chart ==="
 ```
 
