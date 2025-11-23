@@ -13,7 +13,6 @@ argocd-gitops/
 │       └── templates/
 │           ├── _helpers.tpl      # Helpers do Helm
 │           ├── cloudnative-pg-application.yaml
-│           ├── argorollouts-application.yaml
 │           ├── postgres-dev-application.yaml
 │           ├── postgres-prod-application.yaml
 │           ├── saga-dev-application.yaml
@@ -34,115 +33,11 @@ O operador CloudNativePG é instalado para gerenciar clusters PostgreSQL no Kube
 - **Versão**: `0.21.1`
 - **Sync Wave**: `0`
 
-### 2. Argo Rollouts
-
-O Argo Rollouts é instalado para fornecer estratégias avançadas de deployment (BlueGreen e Canary). O Application é gerenciado através do Helm chart em `helm/argocd-applications-chart/templates/argorollouts-application.yaml`.
-
-- **Namespace**: `argo-rollouts`
-- **Repositório**: `https://github.com/argoproj/argo-rollouts.git`
-- **Versão**: `v1.7.0`
-- **Sync Wave**: `0`
-
-#### 2.1. Instalação Automática via ArgoCD
-
-O Argo Rollouts será instalado automaticamente quando o ArgoCD sincronizar a aplicação `argorollouts`.
-
-#### 2.2. Instalação Manual
-
-Se preferir instalar manualmente:
-
-```bash
-# Criar namespace
-kubectl create namespace argo-rollouts
-
-# Instalar Argo Rollouts
-kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
-
-# Verificar instalação
-kubectl get pods -n argo-rollouts
-```
-
-#### 2.3. Instalar CLI do Argo Rollouts
-
-**Windows (PowerShell):**
-```powershell
-# Baixar a CLI
-Invoke-WebRequest -Uri https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-windows-amd64.exe -OutFile kubectl-argo-rollouts.exe
-
-# Mover para PATH (opcional)
-Move-Item kubectl-argo-rollouts.exe $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\kubectl-argo-rollouts.exe
-```
-
-**Linux/Mac:**
-```bash
-# Linux
-curl -LO https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64
-chmod +x kubectl-argo-rollouts-linux-amd64
-sudo mv kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts
-
-# Mac
-curl -LO https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-darwin-amd64
-chmod +x kubectl-argo-rollouts-darwin-amd64
-sudo mv kubectl-argo-rollouts-darwin-amd64 /usr/local/bin/kubectl-argo-rollouts
-```
-
-#### 2.4. Verificar Instalação do Argo Rollouts
-
-```bash
-# Verificar pods do Argo Rollouts
-kubectl get pods -n argo-rollouts
-
-# Verificar CRDs instalados
-kubectl get crd | grep rollouts
-
-# Testar CLI
-kubectl argo rollouts version
-```
-
-#### 2.5. Resolver Erro CreateContainerConfigError
-
-**Problema:**
-
-Após a instalação, o pod do Argo Rollouts pode apresentar o erro `CreateContainerConfigError`. Isso ocorre devido a um conflito entre a configuração `runAsNonRoot: true` no Deployment e a imagem do Argo Rollouts que roda como root.
-
-**Verificar o Erro:**
-
-```bash
-# Verificar o status dos pods
-kubectl get pods -n argo-rollouts
-
-# Se o pod estiver com status CreateContainerConfigError, verificar detalhes
-kubectl describe pod <nome-do-pod> -n argo-rollouts
-```
-
-**Solução:**
-
-Execute o seguinte comando para remover a configuração `runAsNonRoot` do Deployment:
-
-```bash
-kubectl patch deployment argo-rollouts -n argo-rollouts --type json -p '[{"op": "remove", "path": "/spec/template/spec/securityContext/runAsNonRoot"}]'
-```
-
-Após executar o comando:
-
-1. O Deployment será atualizado automaticamente
-2. Um novo ReplicaSet será criado
-3. O pod antigo será substituído por um novo pod funcionando
-4. Aguarde alguns segundos e verifique novamente:
-
-```bash
-kubectl get pods -n argo-rollouts
-```
-
-O pod deve estar com status `Running` e `1/1 READY`.
-
-⚠️ **Atenção**: Se o ArgoCD sincronizar novamente a aplicação `argorollouts`, este patch pode ser sobrescrito. Se isso acontecer e o erro retornar, execute o comando de patch novamente.
-
-### 3. Banco de Dados PostgreSQL (Infrastructure)
+### 2. Banco de Dados PostgreSQL (Infrastructure)
 
 O banco de dados PostgreSQL é gerenciado como uma aplicação separada, garantindo maior independência e disponibilidade. Cada ambiente possui seu próprio cluster PostgreSQL.
 
-#### 3.1. Banco de Dados - Desenvolvimento
+#### 2.1. Banco de Dados - Desenvolvimento
 
 - **Application**: `saga-postgres-dev`
 - **Namespace**: `saga-dev`
@@ -151,7 +46,7 @@ O banco de dados PostgreSQL é gerenciado como uma aplicação separada, garanti
 - **Values File**: `values-dev.yaml`
 - **Sync Wave**: `0`
 
-#### 3.2. Banco de Dados - Produção
+#### 2.2. Banco de Dados - Produção
 
 - **Application**: `saga-postgres-prod`
 - **Namespace**: `saga-prod`
@@ -160,11 +55,11 @@ O banco de dados PostgreSQL é gerenciado como uma aplicação separada, garanti
 - **Values File**: `values-prod.yaml`
 - **Sync Wave**: `0`
 
-### 4. Aplicação SAGA (Applications)
+### 3. Aplicação SAGA (Applications)
 
 A aplicação principal SAGA, que consome o banco de dados PostgreSQL.
 
-#### 4.1. Aplicação de Desenvolvimento (dev)
+#### 3.1. Aplicação de Desenvolvimento (dev)
 
 A instância de desenvolvimento da aplicação SAGA é gerenciada através do Helm chart em `helm/argocd-applications-chart/templates/saga-dev-application.yaml`.
 
@@ -175,7 +70,7 @@ A instância de desenvolvimento da aplicação SAGA é gerenciada através do He
 - **Values File**: `values-dev.yaml`
 - **Sync Wave**: `1`
 
-#### 4.2. Aplicação de Produção (prod)
+#### 3.2. Aplicação de Produção (prod)
 
 A instância de produção da aplicação SAGA é gerenciada através do Helm chart em `helm/argocd-applications-chart/templates/saga-prod-application.yaml`.
 
@@ -192,7 +87,6 @@ Os recursos são sincronizados em ondas (sync waves) para garantir a ordem corre
 
 - **Wave 0**: 
   - CloudNativePG Operator (infrastructure)
-  - Argo Rollouts (infrastructure)
   - PostgreSQL Cluster (banco de dados - infrastructure)
 - **Wave 1**: 
   - Migration Job (executa migrações do banco)
@@ -204,7 +98,6 @@ A ordem de deploy é garantida através de sync waves:
 
 1. **Wave 0**: 
    - O operador CloudNativePG deve estar instalado primeiro
-   - O Argo Rollouts é instalado para suportar estratégias de deployment avançadas
    - Os clusters PostgreSQL são criados logo em seguida
    
 2. **Wave 1**: 
@@ -277,7 +170,6 @@ Esta ordem garante que o banco de dados esteja disponível antes da aplicação 
    
    # Verificar infrastructure
    argocd app get cloudnative-pg-operator
-   argocd app get argorollouts
    argocd app get saga-postgres-dev
    argocd app get saga-postgres-prod
    
@@ -350,7 +242,6 @@ As Applications do ArgoCD são gerenciadas através de um Helm chart centralizad
 ## Referências
 
 - [ArgoCD Documentation](https://argo-cd.readthedocs.io/)
-- [Argo Rollouts Documentation](https://argoproj.github.io/argo-rollouts/)
 - [CloudNativePG Documentation](https://cloudnative-pg.io/)
 - [Helm Documentation](https://helm.sh/docs/)
 

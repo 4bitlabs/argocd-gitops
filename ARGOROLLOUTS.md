@@ -4,13 +4,50 @@ Este documento descreve como usar o Argo Rollouts no projeto SAGA, incluindo as 
 
 ## Instalação
 
-O Argo Rollouts é instalado automaticamente via ArgoCD através do Application `argorollouts` localizado em `argocd-gitops/infrastructure/argorollouts/application.yaml`.
+⚠️ **Importante**: O Argo Rollouts deve ser instalado **manualmente** no cluster Kubernetes antes de usar os Rollouts nas aplicações. Ele não é gerenciado pelo ArgoCD.
 
-Para instalar manualmente, execute:
+### Instalação Manual
+
+Execute os seguintes comandos para instalar o Argo Rollouts:
 
 ```bash
+# Criar namespace
 kubectl create namespace argo-rollouts
-kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
+
+# Instalar Argo Rollouts v1.7.0
+kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/download/v1.7.0/install.yaml
+
+# Verificar instalação
+kubectl get pods -n argo-rollouts
+```
+
+### Resolver Erro CreateContainerConfigError
+
+Após a instalação, o pod do Argo Rollouts pode apresentar o erro `CreateContainerConfigError`. Isso ocorre devido a um conflito entre a configuração `runAsNonRoot: true` no Deployment e a imagem do Argo Rollouts que roda como root.
+
+**Solução:**
+
+```bash
+# Aplicar patch para corrigir o problema
+kubectl patch deployment argo-rollouts -n argo-rollouts --type json -p '[{"op": "remove", "path": "/spec/template/spec/securityContext/runAsNonRoot"}]'
+
+# Aguardar alguns segundos e verificar
+kubectl get pods -n argo-rollouts
+```
+
+O pod deve estar com status `Running` e `1/1 READY`.
+
+### Verificar Instalação
+
+```bash
+# Verificar pods do Argo Rollouts
+kubectl get pods -n argo-rollouts
+
+# Verificar CRDs instalados
+kubectl get crd | grep rollouts
+
+# Verificar o controller está funcionando
+kubectl get deployment argo-rollouts -n argo-rollouts
 ```
 
 ## Estratégias de Deployment
@@ -32,104 +69,80 @@ O ambiente de desenvolvimento utiliza a estratégia **BlueGreen** com **auto-pro
 - `saga-dev-active`: Serviço que aponta para a versão ativa (recebendo tráfego)
 - `saga-dev-preview`: Serviço que aponta para a versão preview (em teste)
 
-#### Promoção Manual
-
-Para promover manualmente a versão preview para produção:
-
-**Opção 1: Usando kubectl argo rollouts (Recomendado)**
-
-⚠️ **Importante**: Antes de usar os comandos `kubectl argo rollouts`, você precisa instalar a CLI do Argo Rollouts. Veja a seção [Instalação da CLI](#instalação-da-cli) abaixo.
+#### Verificar Status do Rollout
 
 ```bash
-# Verificar o status do rollout
-kubectl argo rollouts get rollout saga-dev-app -n saga-dev
+# Ver status básico
+kubectl get rollout saga-dev-saga-chart-app -n saga-dev
 
-# Promover a versão preview
-kubectl argo rollouts promote saga-dev-app -n saga-dev
+# Ver detalhes completos
+kubectl describe rollout saga-dev-saga-chart-app -n saga-dev
+
+# Ver em formato YAML
+kubectl get rollout saga-dev-saga-chart-app -n saga-dev -o yaml
 ```
 
-**Opção 2: Usando kubectl patch (Alternativa sem CLI)**
+#### Promover a Versão Preview (BlueGreen)
 
-Se você não tiver a CLI instalada, pode usar `kubectl patch` diretamente:
+Para promover manualmente a versão preview para produção, você precisa atualizar o status do Rollout:
+
+**Método 1: Usando kubectl patch (Recomendado)**
 
 ```bash
-# Verificar o rollout
-kubectl get rollout saga-dev-app -n saga-dev -o yaml
+# 1. Obter o hash da versão preview (verde)
+kubectl get rollout saga-dev-saga-chart-app -n saga-dev -o jsonpath='{.status.blueGreen.activeSelector}'
 
-# Promover manualmente editando o rollout
-kubectl patch rollout saga-dev-app -n saga-dev --type merge -p '{"status":{"currentPodHash":"<hash-da-versao-preview>"}}'
+# 2. Obter o hash da versão preview
+kubectl get rollout saga-dev-saga-chart-app -n saga-dev -o jsonpath='{.status.blueGreen.previewSelector}'
+
+# 3. Promover trocando o activeSelector pelo previewSelector
+# Primeiro, obtenha o previewSelector
+PREVIEW_HASH=$(kubectl get rollout saga-dev-saga-chart-app -n saga-dev -o jsonpath='{.status.blueGreen.previewSelector}')
+
+# 4. Promover atualizando o status
+kubectl patch rollout saga-dev-saga-chart-app -n saga-dev --type merge -p "{\"status\":{\"currentPodHash\":\"$PREVIEW_HASH\"}}"
 ```
 
-## Instalação da CLI
-
-A CLI do Argo Rollouts é necessária para usar comandos como `kubectl argo rollouts`. Siga as instruções abaixo para sua plataforma:
-
-### Windows (PowerShell)
-
-**Método 1: Download Manual (Recomendado se houver problemas de conexão)**
-
-1. Acesse: https://github.com/argoproj/argo-rollouts/releases/latest
-2. Baixe o arquivo `kubectl-argo-rollouts-windows-amd64.exe`
-3. Renomeie para `kubectl-argo-rollouts.exe`
-4. Mova para um diretório no seu PATH (ex: `C:\Windows\System32` ou `$env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\`)
-
-**Método 2: PowerShell (Download Automático)**
-
-```powershell
-# Baixar a CLI
-$ProgressPreference = 'SilentlyContinue'
-Invoke-WebRequest -Uri "https://github.com/argoproj/argo-rollouts/releases/download/v1.7.0/kubectl-argo-rollouts-windows-amd64.exe" -OutFile "kubectl-argo-rollouts.exe"
-
-# Mover para PATH (opcional, mas recomendado)
-# Opção A: Para o usuário atual
-Move-Item kubectl-argo-rollouts.exe $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\kubectl-argo-rollouts.exe
-
-# Opção B: Para o sistema (requer permissões de administrador)
-# Move-Item kubectl-argo-rollouts.exe C:\Windows\System32\kubectl-argo-rollouts.exe
-```
-
-**Verificar Instalação:**
-
-```powershell
-# Verificar se está no PATH
-kubectl argo rollouts version
-
-# Se não estiver no PATH, use o caminho completo
-.\kubectl-argo-rollouts.exe version
-```
-
-### Linux/Mac
+**Método 2: Usando kubectl edit**
 
 ```bash
-# Linux
-curl -LO https://github.com/argoproj/argo-rollouts/releases/download/v1.7.0/kubectl-argo-rollouts-linux-amd64
-chmod +x kubectl-argo-rollouts-linux-amd64
-sudo mv kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts
+# Editar o rollout
+kubectl edit rollout saga-dev-saga-chart-app -n saga-dev
 
-# Mac
-curl -LO https://github.com/argoproj/argo-rollouts/releases/download/v1.7.0/kubectl-argo-rollouts-darwin-amd64
-chmod +x kubectl-argo-rollouts-darwin-amd64
-sudo mv kubectl-argo-rollouts-darwin-amd64 /usr/local/bin/kubectl-argo-rollouts
+# No editor, localize a seção status.blueGreen e altere:
+# - activeSelector: deve receber o valor do previewSelector
+# - previewSelector: pode ser removido ou deixado vazio
+# Salve e feche o editor
 ```
 
-**Verificar Instalação:**
-
-```bash
-kubectl argo rollouts version
-```
-
-**Opção 3: Via ArgoCD UI**
+**Método 3: Via ArgoCD UI**
 
 1. Acesse o ArgoCD
 2. Navegue até a aplicação `saga-dev`
 3. No recurso `Rollout`, você verá opções para promover ou abortar
+4. Clique em "Promote" para promover a versão preview
 
 #### Abortar um Deployment
 
 Se encontrar problemas na versão preview e quiser abortar:
 
 ```bash
-kubectl argo rollouts abort saga-dev-app -n saga-dev
+# Abortar o rollout atual
+kubectl patch rollout saga-dev-saga-chart-app -n saga-dev --type merge -p '{"spec":{"paused":true}}'
+
+# Ou editar diretamente
+kubectl edit rollout saga-dev-saga-chart-app -n saga-dev
+# Defina spec.paused: true
+```
+
+Para reverter completamente, você pode fazer rollback:
+
+```bash
+# Ver histórico de revisões
+kubectl rollout history rollout saga-dev-saga-chart-app -n saga-dev
+
+# Fazer rollback para a revisão anterior
+kubectl rollout undo rollout saga-dev-saga-chart-app -n saga-dev
 ```
 
 ### Canary (Ambiente Prod)
@@ -144,43 +157,60 @@ O ambiente de produção utiliza a estratégia **Canary** com incremento gradual
 4. **Pausas automáticas**: O rollout pausa em cada etapa para análise
 5. **Promoção ou rollback**: Baseado em métricas ou aprovação manual
 
-#### Ajuste Manual de Tráfego
+#### Verificar Status do Rollout
+
+```bash
+# Ver status básico
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod
+
+# Ver detalhes completos
+kubectl describe rollout saga-prod-saga-chart-app -n saga-prod
+
+# Ver peso atual do tráfego canary
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.canary.weights}'
+
+# Ver se está pausado
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.spec.paused}'
+```
+
+#### Ajuste Manual de Tráfego (Canary)
 
 Durante a apresentação, você pode ajustar o tráfego manualmente:
 
-**Opção 1: Usando kubectl argo rollouts**
+**Método 1: Usando kubectl patch (Recomendado)**
 
 ```bash
 # Verificar status atual
-kubectl argo rollouts get rollout saga-prod-app -n saga-prod
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o yaml | grep -A 5 "canary:"
 
-# Ajustar peso do tráfego (exemplo: 30%)
-kubectl argo rollouts set weight saga-prod-app -n saga-prod 30
+# Ajustar peso do tráfego para 30%
+kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[{"setWeight":30}]}}}}'
 
-# Continuar para o próximo passo
-kubectl argo rollouts promote saga-prod-app -n saga-prod
+# Continuar para o próximo passo (remover pause)
+kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"paused":false}}'
 
-# Pausar o rollout
-kubectl argo rollouts pause saga-prod-app -n saga-prod
-
-# Retomar o rollout
-kubectl argo rollouts resume saga-prod-app -n saga-prod
+# Pausar o rollout manualmente
+kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"paused":true}}'
 ```
 
-**Opção 2: Editar o Rollout diretamente**
+**Método 2: Usando kubectl edit**
 
 ```bash
 # Editar o rollout
-kubectl edit rollout saga-prod-app -n saga-prod
+kubectl edit rollout saga-prod-saga-chart-app -n saga-prod
 
-# Modificar o campo spec.strategy.canary.steps para ajustar os pesos
+# No editor, você pode:
+# - Modificar spec.strategy.canary.steps para ajustar os pesos
+# - Alterar spec.paused para pausar/retomar
+# - Modificar spec.replicas se necessário
+# Salve e feche o editor
 ```
 
-**Opção 3: Usando kubectl patch**
+**Método 3: Promover para 100% (completar rollout)**
 
 ```bash
-# Ajustar para 30% de tráfego
-kubectl patch rollout saga-prod-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[{"setWeight":30}]}}}}'
+# Promover para 100% removendo todos os steps e pausas
+kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[]}},"paused":false}}'
 ```
 
 #### Exemplo de Demonstração
@@ -192,16 +222,19 @@ Para demonstrar o ajuste de tráfego durante a apresentação:
 # (Atualize a tag da imagem no values-prod.yaml e faça sync no ArgoCD)
 
 # 2. Verificar que o rollout está pausado em 10%
-kubectl argo rollouts get rollout saga-prod-app -n saga-prod
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.canary.weights}'
 
 # 3. Ajustar manualmente para 20%
-kubectl argo rollouts set weight saga-prod-app -n saga-prod 20
+kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[{"setWeight":20}]}},"paused":false}}'
 
-# 4. Continuar para 50%
-kubectl argo rollouts set weight saga-prod-app -n saga-prod 50
+# 4. Aguardar alguns segundos e verificar
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod
 
-# 5. Promover para 100%
-kubectl argo rollouts promote saga-prod-app -n saga-prod
+# 5. Continuar para 50%
+kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[{"setWeight":50}]}},"paused":false}}'
+
+# 6. Promover para 100% (completar)
+kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[]}},"paused":false}}'
 ```
 
 ## Comandos Úteis
@@ -209,38 +242,56 @@ kubectl argo rollouts promote saga-prod-app -n saga-prod
 ### Verificar Status
 
 ```bash
+# Status básico
+kubectl get rollout <nome-do-rollout> -n <namespace>
+
 # Status detalhado
-kubectl argo rollouts get rollout <nome-do-rollout> -n <namespace>
+kubectl describe rollout <nome-do-rollout> -n <namespace>
 
 # Status em formato YAML
 kubectl get rollout <nome-do-rollout> -n <namespace> -o yaml
 
-# Histórico de revisões
-kubectl argo rollouts history <nome-do-rollout> -n <namespace>
+# Status em formato JSON (útil para scripts)
+kubectl get rollout <nome-do-rollout> -n <namespace> -o json
+
+# Ver pods relacionados ao rollout
+kubectl get pods -n <namespace> -l app.kubernetes.io/name=saga-api
+
+# Ver serviços relacionados
+kubectl get svc -n <namespace> | grep saga
 ```
 
 ### Rollback
 
 ```bash
-# Rollback para uma revisão anterior
-kubectl argo rollouts undo <nome-do-rollout> -n <namespace>
+# Ver histórico de revisões
+kubectl rollout history rollout <nome-do-rollout> -n <namespace>
+
+# Rollback para a revisão anterior
+kubectl rollout undo rollout <nome-do-rollout> -n <namespace>
 
 # Rollback para uma revisão específica
-kubectl argo rollouts undo <nome-do-rollout> -n <namespace> --to-revision=<numero>
+kubectl rollout undo rollout <nome-do-rollout> -n <namespace> --to-revision=<numero>
 ```
 
-### Abortar Deployment
+### Pausar/Retomar Rollout
 
 ```bash
-# Abortar o deployment atual
-kubectl argo rollouts abort <nome-do-rollout> -n <namespace>
+# Pausar rollout
+kubectl patch rollout <nome-do-rollout> -n <namespace> --type merge -p '{"spec":{"paused":true}}'
+
+# Retomar rollout
+kubectl patch rollout <nome-do-rollout> -n <namespace> --type merge -p '{"spec":{"paused":false}}'
+
+# Verificar se está pausado
+kubectl get rollout <nome-do-rollout> -n <namespace> -o jsonpath='{.spec.paused}'
 ```
 
 ### Restart
 
 ```bash
-# Reiniciar o rollout
-kubectl argo rollouts restart <nome-do-rollout> -n <namespace>
+# Reiniciar o rollout (força um novo deployment)
+kubectl rollout restart rollout <nome-do-rollout> -n <namespace>
 ```
 
 ## Integração com ArgoCD
@@ -251,6 +302,8 @@ O ArgoCD gerencia os Rollouts da mesma forma que gerencia Deployments:
 - **Visualização**: O status do Rollout aparece no dashboard do ArgoCD
 - **Promoção via UI**: É possível promover/abortar via interface do ArgoCD
 - **Sync Waves**: Os Rollouts são deployados após as migrações (sync-wave: "2")
+
+**Nota**: Embora o ArgoCD gerencie os Rollouts das aplicações, o próprio controlador do Argo Rollouts deve estar instalado manualmente no cluster.
 
 ## Troubleshooting
 
@@ -265,6 +318,9 @@ kubectl get pods -n <namespace> -l app.kubernetes.io/name=saga-api
 
 # Verificar serviços
 kubectl get svc -n <namespace>
+
+# Verificar logs do controller do Argo Rollouts
+kubectl logs -n argo-rollouts deployment/argo-rollouts
 ```
 
 ### Problemas com serviços BlueGreen
@@ -272,7 +328,12 @@ kubectl get svc -n <namespace>
 Certifique-se de que os serviços `-active` e `-preview` foram criados:
 
 ```bash
+# Verificar serviços
 kubectl get svc -n saga-dev | grep saga-dev
+
+# Verificar qual serviço está apontando para qual versão
+kubectl get svc saga-dev-active -n saga-dev -o yaml
+kubectl get svc saga-dev-preview -n saga-dev -o yaml
 ```
 
 ### Problemas com tráfego Canary
@@ -280,7 +341,27 @@ kubectl get svc -n saga-dev | grep saga-dev
 Verifique se o Rollout está pausado e qual o peso atual:
 
 ```bash
-kubectl argo rollouts get rollout saga-prod-app -n saga-prod
+# Ver status completo
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o yaml
+
+# Ver peso atual
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.canary.weights}'
+
+# Ver se está pausado
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.spec.paused}'
+```
+
+### Controller do Argo Rollouts não está funcionando
+
+```bash
+# Verificar se o controller está rodando
+kubectl get pods -n argo-rollouts
+
+# Ver logs do controller
+kubectl logs -n argo-rollouts deployment/argo-rollouts
+
+# Verificar eventos do namespace
+kubectl get events -n argo-rollouts --sort-by='.lastTimestamp'
 ```
 
 ## Referências
@@ -288,4 +369,3 @@ kubectl argo rollouts get rollout saga-prod-app -n saga-prod
 - [Documentação Oficial do Argo Rollouts](https://argoproj.github.io/argo-rollouts/)
 - [BlueGreen Strategy](https://argoproj.github.io/argo-rollouts/features/bluegreen/)
 - [Canary Strategy](https://argoproj.github.io/argo-rollouts/features/canary/)
-
