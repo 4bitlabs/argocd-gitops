@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   # Infrastructure
   - infrastructure/cloudnative-pg/application.yaml
+  - infrastructure/argorollouts/application.yaml
   - infrastructure/postgres/dev/application.yaml
   - infrastructure/postgres/prod/application.yaml
   
