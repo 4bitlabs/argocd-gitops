@@ -132,7 +132,10 @@ kubectl patch rollout saga-dev-saga-chart-app -n saga-dev --type merge -p '{"spe
 
 # Ou editar diretamente
 kubectl edit rollout saga-dev-saga-chart-app -n saga-dev
-# Defina spec.paused: true
+
+# No editor, adicione dentro de spec:
+# spec:
+#   paused: true  # ← Adicione esta linha (não existe por padrão)
 ```
 
 Para reverter completamente, você pode fazer rollback:
@@ -166,51 +169,182 @@ kubectl get rollout saga-prod-saga-chart-app -n saga-prod
 # Ver detalhes completos
 kubectl describe rollout saga-prod-saga-chart-app -n saga-prod
 
-# Ver peso atual do tráfego canary
-kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.canary.weights}'
+# Ver step atual do canary (índice do passo atual, começa em 0)
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.currentStepIndex}'
 
-# Ver se está pausado
-kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.spec.paused}'
+# Ver se está pausado (retorna true/false)
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.controllerPause}'
+
+# Ver fase do rollout (Paused, Progressing, Degraded, Healthy)
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.phase}'
+
+# Ver condições de pausa (razão da pausa)
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.pauseConditions[*].reason}'
+
+# Ver peso atual do canary (verificar o setWeight do step atual)
+# PowerShell:
+$stepIndex = kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.currentStepIndex}'
+Write-Host "Step atual: $stepIndex"
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath="{.spec.strategy.canary.steps[$stepIndex].setWeight}"
+
+# Bash/Linux:
+# STEP_INDEX=$(kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.currentStepIndex}')
+# echo "Step atual: $STEP_INDEX"
+# kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath="{.spec.strategy.canary.steps[$STEP_INDEX].setWeight}"
+
+# Ver todos os steps configurados (mostra todos os pesos definidos)
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.spec.strategy.canary.steps[*].setWeight}'
+
+# Ver informações resumidas do status
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o custom-columns=STEP:.status.currentStepIndex,PHASE:.status.phase,PAUSED:.status.controllerPause
 ```
 
 #### Ajuste Manual de Tráfego (Canary)
 
-Durante a apresentação, você pode ajustar o tráfego manualmente:
+Durante a apresentação, você pode ajustar o tráfego manualmente. 
+
+⚠️ **Importante**: 
+- Os steps do Canary são uma lista sequencial: `[setWeight: 10, pause, setWeight: 25, pause, ...]`
+- Quando você faz `patch` com novos steps, você **substitui TODA a lista**
+- Para ajustar apenas o step atual, use `kubectl edit` e modifique apenas o step específico
+- O `currentStepIndex` no status indica qual step está ativo (0 = primeiro step)
+
+#### Como Continuar o Rollout Quando Está Pausado
+
+Quando o rollout está pausado em um step de pause, o campo `spec.paused` **não existe** por padrão. Para continuar:
+
+**Opção 1: Usando kubectl patch (Rápido)**
+```bash
+kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"paused":false}}'
+```
+
+**Opção 2: Usando kubectl edit (Mais controle)**
+```bash
+kubectl edit rollout saga-prod-saga-chart-app -n saga-prod
+```
+
+No editor, adicione `paused: false` dentro da seção `spec:`:
+
+```yaml
+spec:
+  replicas: 10
+  paused: false  # ← Adicione esta linha (não existe por padrão)
+  selector:
+    matchLabels:
+      ...
+  strategy:
+    canary:
+      steps:
+        ...
+```
+
+**Como funciona:**
+- Quando você adiciona `spec.paused: false`, o controller do Argo Rollouts:
+  1. Remove automaticamente as `pauseConditions` do status
+  2. Continua para o próximo step na sequência
+  3. Aplica o próximo `setWeight` ou `pause` conforme definido nos steps
 
 **Método 1: Usando kubectl patch (Recomendado)**
 
 ```bash
-# Verificar status atual
-kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o yaml | grep -A 5 "canary:"
+# 1. Verificar status atual
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.currentStepIndex}'
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.controllerPause}'
 
-# Ajustar peso do tráfego para 30%
-kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[{"setWeight":30}]}}}}'
+# 2. Ajustar peso do tráfego para um valor específico (exemplo: 30%)
+# IMPORTANTE: Isso substitui TODOS os steps. Você precisa incluir os steps seguintes.
+kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[{"setWeight":30},{"pause":{}},{"setWeight":50},{"pause":{}},{"setWeight":75},{"pause":{}},{"setWeight":100}]}},"paused":false}}'
 
-# Continuar para o próximo passo (remover pause)
+# 3. Continuar para o próximo passo (remover pause)
 kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"paused":false}}'
 
-# Pausar o rollout manualmente
+# 4. Pausar o rollout manualmente (força pausa mesmo que não esteja em um step de pausa)
 kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"paused":true}}'
 ```
 
-**Método 2: Usando kubectl edit**
+**Método 2: Usando kubectl edit (Mais flexível)**
 
 ```bash
 # Editar o rollout
 kubectl edit rollout saga-prod-saga-chart-app -n saga-prod
+```
 
-# No editor, você pode:
-# - Modificar spec.strategy.canary.steps para ajustar os pesos
-# - Alterar spec.paused para pausar/retomar
-# - Modificar spec.replicas se necessário
-# Salve e feche o editor
+**Para continuar para o próximo step quando o rollout está pausado:**
+
+1. No editor, localize a seção `spec:` (não `status:`)
+2. Adicione a linha `paused: false` dentro de `spec:`:
+
+```yaml
+spec:
+  replicas: 10
+  paused: false  # ← Adicione esta linha para continuar
+  selector:
+    matchLabels:
+      ...
+  strategy:
+    canary:
+      steps:
+        - setWeight: 10
+        - pause: {}
+        ...
+```
+
+3. Salve e feche o editor
+
+**Nota importante**: 
+- O campo `spec.paused` não existe por padrão no Rollout
+- Quando você adiciona `spec.paused: false`, o controller do Argo Rollouts remove automaticamente as `pauseConditions` do status e continua para o próximo step
+- Para pausar manualmente, adicione `spec.paused: true`
+
+**Outras modificações possíveis no editor:**
+
+```yaml
+spec:
+  # Modificar número de réplicas
+  replicas: 15
+  
+  # Pausar/retomar rollout
+  paused: false  # ou true para pausar
+  
+  # Modificar steps do canary
+  strategy:
+    canary:
+      steps:
+        - setWeight: 20
+        - pause: {}
+        - setWeight: 40
+        - pause: {}
+        - setWeight: 60
+        - pause: {}
+        - setWeight: 80
+        - pause: {}
+        - setWeight: 100
 ```
 
 **Método 3: Promover para 100% (completar rollout)**
 
 ```bash
 # Promover para 100% removendo todos os steps e pausas
+# Isso faz o rollout completar imediatamente
 kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[]}},"paused":false}}'
+```
+
+**Método 4: Ajustar apenas o step atual (Mais preciso)**
+
+Para ajustar apenas o step atual sem substituir todos os steps, você precisa editar manualmente:
+
+```bash
+# 1. Obter o índice do step atual
+$stepIndex = kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.currentStepIndex}'
+Write-Host "Step atual: $stepIndex"
+
+# 2. Editar o rollout e modificar apenas o step no índice atual
+kubectl edit rollout saga-prod-saga-chart-app -n saga-prod
+
+# No editor:
+# - Localize spec.strategy.canary.steps[$stepIndex] e ajuste o setWeight
+# - Mantenha os outros steps inalterados
+# - Se estiver pausado, adicione spec.paused: false para continuar
 ```
 
 #### Exemplo de Demonstração
@@ -221,21 +355,32 @@ Para demonstrar o ajuste de tráfego durante a apresentação:
 # 1. Iniciar um novo deployment
 # (Atualize a tag da imagem no values-prod.yaml e faça sync no ArgoCD)
 
-# 2. Verificar que o rollout está pausado em 10%
-kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.canary.weights}'
+# 2. Verificar status inicial
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='Step: {.status.currentStepIndex}, Phase: {.status.phase}, Paused: {.status.controllerPause}'
 
-# 3. Ajustar manualmente para 20%
-kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[{"setWeight":20}]}},"paused":false}}'
+# 3. Verificar o peso atual do step
+$stepIndex = kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.currentStepIndex}'
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath="{.spec.strategy.canary.steps[$stepIndex].setWeight}"
 
-# 4. Aguardar alguns segundos e verificar
+# 4. Ajustar manualmente para 20% (substituindo os steps seguintes)
+# IMPORTANTE: Inclua os steps seguintes para manter a progressão
+kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[{"setWeight":20},{"pause":{}},{"setWeight":40},{"pause":{}},{"setWeight":60},{"pause":{}},{"setWeight":80},{"pause":{}},{"setWeight":100}]}},"paused":false}}'
+
+# 5. Aguardar alguns segundos e verificar
 kubectl get rollout saga-prod-saga-chart-app -n saga-prod
 
-# 5. Continuar para 50%
-kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[{"setWeight":50}]}},"paused":false}}'
+# 6. Se quiser pausar novamente para análise
+kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"paused":true}}'
 
-# 6. Promover para 100% (completar)
+# 7. Continuar (retomar)
+kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"paused":false}}'
+
+# 8. Promover para 100% imediatamente (completar rollout)
 kubectl patch rollout saga-prod-saga-chart-app -n saga-prod --type merge -p '{"spec":{"strategy":{"canary":{"steps":[]}},"paused":false}}'
 ```
+
+**Nota**: Quando você usa `kubectl patch` para ajustar os steps, você está substituindo TODA a lista de steps. Por isso é importante incluir os steps seguintes na sequência desejada. Para ajustes mais precisos, use `kubectl edit` para modificar apenas o step atual.
 
 ## Comandos Úteis
 
@@ -277,14 +422,26 @@ kubectl rollout undo rollout <nome-do-rollout> -n <namespace> --to-revision=<num
 ### Pausar/Retomar Rollout
 
 ```bash
-# Pausar rollout
+# Pausar rollout manualmente
 kubectl patch rollout <nome-do-rollout> -n <namespace> --type merge -p '{"spec":{"paused":true}}'
 
-# Retomar rollout
+# Retomar rollout (continuar para próximo step)
 kubectl patch rollout <nome-do-rollout> -n <namespace> --type merge -p '{"spec":{"paused":false}}'
 
-# Verificar se está pausado
-kubectl get rollout <nome-do-rollout> -n <namespace> -o jsonpath='{.spec.paused}'
+# OU usando kubectl edit:
+# kubectl edit rollout <nome-do-rollout> -n <namespace>
+# No editor, adicione dentro de spec:
+# spec:
+#   paused: false  # ← Adicione esta linha (não existe por padrão)
+
+# Verificar se está pausado (retorna true/false)
+kubectl get rollout <nome-do-rollout> -n <namespace> -o jsonpath='{.status.controllerPause}'
+
+# Ver fase do rollout (Paused, Progressing, Degraded, Healthy)
+kubectl get rollout <nome-do-rollout> -n <namespace> -o jsonpath='{.status.phase}'
+
+# Ver condições de pausa (razão da pausa)
+kubectl get rollout <nome-do-rollout> -n <namespace> -o jsonpath='{.status.pauseConditions[*].reason}'
 ```
 
 ### Restart
@@ -304,6 +461,31 @@ O ArgoCD gerencia os Rollouts da mesma forma que gerencia Deployments:
 - **Sync Waves**: Os Rollouts são deployados após as migrações (sync-wave: "2")
 
 **Nota**: Embora o ArgoCD gerencie os Rollouts das aplicações, o próprio controlador do Argo Rollouts deve estar instalado manualmente no cluster.
+
+### ⚠️ Problema: Promoção Automática com BlueGreen
+
+**Sintoma**: Mesmo com `autoPromotionEnabled: false`, o ArgoCD promove automaticamente a versão preview.
+
+**Causa**: O `Replace=true` no `syncOptions` do ArgoCD faz com que o recurso seja substituído completamente durante o sync, fazendo o Argo Rollouts perder o estado do BlueGreen e promover automaticamente.
+
+**Solução**: Foi adicionada a anotação `argocd.argoproj.io/sync-options: Replace=false` diretamente no recurso Rollout. Isso permite que apenas o Rollout seja sincronizado sem Replace (preservando o status), enquanto os outros recursos (Service, ConfigMap, etc.) continuam usando `Replace=true` para garantir atualizações completas.
+
+**Como funciona**:
+
+- **Anotação no Rollout**: `argocd.argoproj.io/sync-options: Replace=false` controla apenas o Rollout
+- **SyncOptions da aplicação**: Mantém `Replace=true` para outros recursos
+- **Resultado**: O Rollout preserva seu status (activeSelector/previewSelector), enquanto outros recursos são atualizados normalmente
+
+**Verificar configuração**:
+
+```bash
+# Verificar a anotação no Rollout
+kubectl get rollout saga-dev-saga-chart-app -n saga-dev -o jsonpath='{.metadata.annotations.argocd\.argoproj\.io/sync-options}'
+
+# Deve retornar: Replace=false
+```
+
+**Nota**: Esta configuração já está aplicada no template do Rollout. Após o próximo deploy, o comportamento correto será aplicado automaticamente.
 
 ## Troubleshooting
 
@@ -344,11 +526,24 @@ Verifique se o Rollout está pausado e qual o peso atual:
 # Ver status completo
 kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o yaml
 
-# Ver peso atual
-kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.canary.weights}'
+# Ver step atual do canary
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.currentStepIndex}'
 
-# Ver se está pausado
-kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.spec.paused}'
+# Ver se está pausado (controllerPause)
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.controllerPause}'
+
+# Ver fase do rollout
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.phase}'
+
+# Ver condições de pausa
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.pauseConditions[*].reason}'
+
+# Ver peso atual do step (PowerShell)
+$stepIndex = kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.status.currentStepIndex}'
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath="{.spec.strategy.canary.steps[$stepIndex].setWeight}"
+
+# Ver todos os steps configurados
+kubectl get rollout saga-prod-saga-chart-app -n saga-prod -o jsonpath='{.spec.strategy.canary.steps[*].setWeight}'
 ```
 
 ### Controller do Argo Rollouts não está funcionando
