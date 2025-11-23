@@ -24,6 +24,7 @@ kubectl patch application saga-postgres-dev -n argocd -p '{\"metadata\":{\"final
 kubectl patch application saga-postgres-prod -n argocd -p '{\"metadata\":{\"finalizers\":[]}}' --type merge
 kubectl patch application saga-dev -n argocd -p '{\"metadata\":{\"finalizers\":[]}}' --type merge
 kubectl patch application saga-prod -n argocd -p '{\"metadata\":{\"finalizers\":[]}}' --type merge
+kubectl patch application argorollouts -n argocd -p '{\"metadata\":{\"finalizers\":[]}}' --type merge
 
 # Deletar as Applications
 kubectl delete application cloudnative-pg-operator -n argocd
