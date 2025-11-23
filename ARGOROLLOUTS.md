@@ -97,7 +97,7 @@ kubectl get rollout saga-dev-saga-chart-app -n saga-dev -o jsonpath='{.status.bl
 
 # 3. Promover trocando o activeSelector pelo previewSelector
 # Primeiro, obtenha o previewSelector
-PREVIEW_HASH=$(kubectl get rollout saga-dev-saga-chart-app -n saga-dev -o jsonpath='{.status.blueGreen.previewSelector}')
+$PREVIEW_HASH=$(kubectl get rollout saga-dev-saga-chart-app -n saga-dev -o jsonpath='{.status.blueGreen.previewSelector}')
 
 # 4. Promover atualizando o status
 kubectl patch rollout saga-dev-saga-chart-app -n saga-dev --type merge -p "{\"status\":{\"currentPodHash\":\"$PREVIEW_HASH\"}}"
