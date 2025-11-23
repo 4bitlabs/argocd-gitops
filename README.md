@@ -7,13 +7,19 @@ Este repositório contém as configurações GitOps para deploy da aplicação S
 ```
 argocd-gitops/
 ├── infrastructure/
-│   └── cloudnative-pg/
-│       └── application.yaml      # Instalação do operador CloudNativePG
+│   ├── cloudnative-pg/
+│   │   └── application.yaml      # Instalação do operador CloudNativePG
+│   └── postgres/
+│       ├── dev/
+│       │   └── application.yaml  # Banco de dados de desenvolvimento
+│       └── prod/
+│           └── application.yaml  # Banco de dados de produção
 ├── apps/
 │   ├── dev/
 │   │   └── application.yaml      # Aplicação de desenvolvimento
 │   └── prod/
 │       └── application.yaml      # Aplicação de produção
+├── kustomization.yaml            # Kustomize para aplicar todas as applications
 └── README.md
 ```
 
@@ -25,37 +31,81 @@ O operador CloudNativePG é instalado para gerenciar clusters PostgreSQL no Kube
 
 - **Namespace**: `cnpg-system`
 - **Chart**: `cloudnative-pg` do repositório oficial
-- **Versão**: `v1.24.4`
+- **Versão**: `0.21.1`
+- **Sync Wave**: `0`
 
-### 2. Aplicação de Desenvolvimento (dev)
+### 2. Banco de Dados PostgreSQL (Infrastructure)
+
+O banco de dados PostgreSQL é gerenciado como uma aplicação separada, garantindo maior independência e disponibilidade. Cada ambiente possui seu próprio cluster PostgreSQL.
+
+#### 2.1. Banco de Dados - Desenvolvimento
+
+- **Application**: `saga-postgres-dev`
+- **Namespace**: `saga-dev`
+- **Branch**: `develop`
+- **Helm Chart**: `helm/postgres-chart`
+- **Values File**: `values-dev.yaml`
+- **Sync Wave**: `0`
+
+#### 2.2. Banco de Dados - Produção
+
+- **Application**: `saga-postgres-prod`
+- **Namespace**: `saga-prod`
+- **Branch**: `main`
+- **Helm Chart**: `helm/postgres-chart`
+- **Values File**: `values-prod.yaml`
+- **Sync Wave**: `0`
+
+### 3. Aplicação SAGA (Applications)
+
+A aplicação principal SAGA, que consome o banco de dados PostgreSQL.
+
+#### 3.1. Aplicação de Desenvolvimento (dev)
 
 A instância de desenvolvimento da aplicação SAGA está configurada em `apps/dev/application.yaml`.
 
+- **Application**: `saga-dev`
 - **Namespace**: `saga-dev`
 - **Branch**: `develop`
 - **Helm Chart**: `helm/saga-chart`
 - **Values File**: `values-dev.yaml`
+- **Sync Wave**: `1`
 
-### 3. Aplicação de Produção (prod)
+#### 3.2. Aplicação de Produção (prod)
 
 A instância de produção da aplicação SAGA está configurada em `apps/prod/application.yaml`.
 
+- **Application**: `saga-prod`
 - **Namespace**: `saga-prod`
 - **Branch**: `main`
 - **Helm Chart**: `helm/saga-chart`
 - **Values File**: `values-prod.yaml`
+- **Sync Wave**: `1`
 
 ## Sync Waves
 
 Os recursos são sincronizados em ondas (sync waves) para garantir a ordem correta de deploy:
 
-- **Wave 0**: CloudNativePG Cluster (banco de dados)
-- **Wave 1**: Migration Job (executa migrações do banco)
-- **Wave 2**: Application Deployment (aplicação principal)
+- **Wave 0**: 
+  - CloudNativePG Operator (infrastructure)
+  - PostgreSQL Cluster (banco de dados - infrastructure)
+- **Wave 1**: 
+  - Migration Job (executa migrações do banco)
+  - Application Deployment (aplicação principal)
 
 ## Dependências
 
-As aplicações `saga-dev` e `saga-prod` dependem do `cloudnative-pg-operator` estar instalado primeiro. Isso é garantido através de sync waves: o operador é instalado na wave "0" e as aplicações na wave "1".
+A ordem de deploy é garantida através de sync waves:
+
+1. **Wave 0**: 
+   - O operador CloudNativePG deve estar instalado primeiro
+   - Os clusters PostgreSQL são criados logo em seguida
+   
+2. **Wave 1**: 
+   - As aplicações `saga-dev` e `saga-prod` dependem dos clusters PostgreSQL estarem prontos
+   - O job de migração executa antes do deployment da aplicação (usando PreSync hook)
+
+Esta ordem garante que o banco de dados esteja disponível antes da aplicação tentar se conectar.
 
 ## Configuração Inicial
 
@@ -120,6 +170,10 @@ As aplicações `saga-dev` e `saga-prod` dependem do `cloudnative-pg-operator` e
    # Aguardar o operador estar pronto (opcional, mas recomendado)
    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system --timeout=300s
    
+   # Aplicar os bancos de dados PostgreSQL
+   kubectl apply -f infrastructure/postgres/dev/application.yaml
+   kubectl apply -f infrastructure/postgres/prod/application.yaml
+   
    # Aplicar as aplicações
    kubectl apply -f apps/dev/application.yaml
    kubectl apply -f apps/prod/application.yaml
@@ -128,11 +182,30 @@ As aplicações `saga-dev` e `saga-prod` dependem do `cloudnative-pg-operator` e
 6. **Verificar o status via ArgoCD CLI**:
    ```bash
    argocd app list
+   
+   # Verificar infrastructure
+   argocd app get cloudnative-pg-operator
+   argocd app get saga-postgres-dev
+   argocd app get saga-postgres-prod
+   
+   # Verificar applications
    argocd app get saga-dev
    argocd app get saga-prod
    ```
 
    Mas, como você está com o servidor aberto, você também pode acessar a UI do argocd e acompanhar tudo por lá
+
+## Arquitetura
+
+A arquitetura do projeto segue o princípio de separação de responsabilidades:
+
+- **Infrastructure**: Componentes de infraestrutura (operador e banco de dados) que devem estar sempre disponíveis
+- **Applications**: Aplicações que dependem da infraestrutura
+
+O banco de dados PostgreSQL foi separado em um Helm chart próprio (`postgres-chart`) para:
+- Garantir maior independência e disponibilidade
+- Facilitar manutenção e atualizações do banco
+- Permitir que o banco permaneça disponível mesmo durante atualizações da aplicação
 
 ## Referências
 

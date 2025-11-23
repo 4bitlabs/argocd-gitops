@@ -2,16 +2,33 @@
 
 Este guia mostra como remover completamente todas as aplicações e recursos para começar do zero.
 
+## Estrutura das Applications
+
+O projeto possui as seguintes Applications no ArgoCD:
+
+**Infrastructure:**
+- `cloudnative-pg-operator` - Operador CloudNativePG (namespace: `cnpg-system`)
+- `saga-postgres-dev` - Banco de dados de desenvolvimento (namespace: `saga-dev`)
+- `saga-postgres-prod` - Banco de dados de produção (namespace: `saga-prod`)
+
+**Applications:**
+- `saga-dev` - Aplicação de desenvolvimento (namespace: `saga-dev`)
+- `saga-prod` - Aplicação de produção (namespace: `saga-prod`)
+
 ## Passo 1: Remover as Applications do ArgoCD
 
 ```bash
 # Remover as Applications (se tiver finalizers travados, remova primeiro)
 kubectl patch application cloudnative-pg-operator -n argocd -p '{\"metadata\":{\"finalizers\":[]}}' --type merge
+kubectl patch application saga-postgres-dev -n argocd -p '{\"metadata\":{\"finalizers\":[]}}' --type merge
+kubectl patch application saga-postgres-prod -n argocd -p '{\"metadata\":{\"finalizers\":[]}}' --type merge
 kubectl patch application saga-dev -n argocd -p '{\"metadata\":{\"finalizers\":[]}}' --type merge
 kubectl patch application saga-prod -n argocd -p '{\"metadata\":{\"finalizers\":[]}}' --type merge
 
 # Deletar as Applications
 kubectl delete application cloudnative-pg-operator -n argocd
+kubectl delete application saga-postgres-dev -n argocd
+kubectl delete application saga-postgres-prod -n argocd
 kubectl delete application saga-dev -n argocd
 kubectl delete application saga-prod -n argocd
 
@@ -71,10 +88,14 @@ Execute este script para fazer tudo automaticamente:
 # Reset Completo
 echo "=== Removendo Applications ==="
 kubectl patch application cloudnative-pg-operator -n argocd -p '{"metadata":{"finalizers":[]}}' --type merge 2>/dev/null || true
+kubectl patch application saga-postgres-dev -n argocd -p '{"metadata":{"finalizers":[]}}' --type merge 2>/dev/null || true
+kubectl patch application saga-postgres-prod -n argocd -p '{"metadata":{"finalizers":[]}}' --type merge 2>/dev/null || true
 kubectl patch application saga-dev -n argocd -p '{"metadata":{"finalizers":[]}}' --type merge 2>/dev/null || true
 kubectl patch application saga-prod -n argocd -p '{"metadata":{"finalizers":[]}}' --type merge 2>/dev/null || true
 
 kubectl delete application cloudnative-pg-operator -n argocd 2>/dev/null || true
+kubectl delete application saga-postgres-dev -n argocd 2>/dev/null || true
+kubectl delete application saga-postgres-prod -n argocd 2>/dev/null || true
 kubectl delete application saga-dev -n argocd 2>/dev/null || true
 kubectl delete application saga-prod -n argocd 2>/dev/null || true
 
