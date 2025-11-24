@@ -468,13 +468,17 @@ O ArgoCD gerencia os Rollouts da mesma forma que gerencia Deployments:
 
 **Causa**: O `Replace=true` no `syncOptions` do ArgoCD faz com que o recurso seja substituído completamente durante o sync, fazendo o Argo Rollouts perder o estado do BlueGreen e promover automaticamente.
 
-**Solução**: Foi adicionada a anotação `argocd.argoproj.io/sync-options: Replace=false` diretamente no recurso Rollout. Isso permite que apenas o Rollout seja sincronizado sem Replace (preservando o status), enquanto os outros recursos (Service, ConfigMap, etc.) continuam usando `Replace=true` para garantir atualizações completas.
+**Solução**: Foi adicionada a anotação `argocd.argoproj.io/sync-options: Replace=false,ServerSideApply=true` diretamente no recurso Rollout. Isso permite que apenas o Rollout seja sincronizado com essas opções específicas (preservando o status), enquanto os outros recursos (Service, ConfigMap, etc.) continuam usando `Replace=true` para garantir atualizações completas.
 
 **Como funciona**:
 
-- **Anotação no Rollout**: `argocd.argoproj.io/sync-options: Replace=false` controla apenas o Rollout
-- **SyncOptions da aplicação**: Mantém `Replace=true` para outros recursos
-- **Resultado**: O Rollout preserva seu status (activeSelector/previewSelector), enquanto outros recursos são atualizados normalmente
+- **Anotação no Rollout**: `argocd.argoproj.io/sync-options: Replace=false,ServerSideApply=true` controla apenas o Rollout
+  - `Replace=false`: Evita substituir completamente o recurso, preservando o status
+  - `ServerSideApply=true`: Usa Server-Side Apply do Kubernetes para melhor preservação de campos gerenciados e status
+- **SyncOptions da aplicação**: Mantém apenas `Replace=true` para outros recursos (Service, ConfigMap, Job, etc.)
+  - `ServerSideApply=true` foi removido do syncOptions da aplicação para evitar possíveis conflitos
+  - Apenas o Rollout usa ServerSideApply via anotação específica
+- **Resultado**: O Rollout preserva seu status (activeSelector/previewSelector) usando Server-Side Apply sem Replace, enquanto outros recursos são atualizados normalmente com Replace
 
 **Verificar configuração**:
 
@@ -482,7 +486,7 @@ O ArgoCD gerencia os Rollouts da mesma forma que gerencia Deployments:
 # Verificar a anotação no Rollout
 kubectl get rollout saga-dev-saga-chart-app -n saga-dev -o jsonpath='{.metadata.annotations.argocd\.argoproj\.io/sync-options}'
 
-# Deve retornar: Replace=false
+# Deve retornar: Replace=false,ServerSideApply=true
 ```
 
 **Nota**: Esta configuração já está aplicada no template do Rollout. Após o próximo deploy, o comportamento correto será aplicado automaticamente.
